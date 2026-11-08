@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { keepCorrectPlayers } from './utils/lineup';
 import { GameGrid } from './components/GameGrid';
 import { PlayerSelectionModal } from './components/PlayerSelectionModal';
 import { ResultBanner } from './components/ResultBanner';
@@ -165,9 +166,18 @@ export default function App() {
   const [selectingPosition, setSelectingPosition] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
+  const [isRevealing, setIsRevealing] = useState(false);
+  const revealLocked = useRef(false);
+  const revealTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearRevealTimers = () => {
+    revealTimers.current.forEach(clearTimeout);
+    revealTimers.current = [];
+  };
+  useEffect(() => clearRevealTimers, []);
 
   const handlePlayerSelect = (player: Player) => {
-    if (selectingPosition === null) return;
+    if (selectingPosition === null || revealLocked.current) return;
 
     const newAttempt = [...currentAttempt];
     newAttempt[selectingPosition] = player;
@@ -176,7 +186,10 @@ export default function App() {
   };
 
   const handleSubmit = () => {
-    if (currentAttempt.some(p => p === null)) return;
+    if (revealLocked.current || gameState !== 'playing' || currentAttempt.some(p => p === null)) return;
+    revealLocked.current = true;
+    setIsRevealing(true);
+    setSelectingPosition(null);
 
     const correct = currentAttempt.filter((player, idx) => 
       player?.name === HIDDEN_TEAM[idx].name
@@ -185,7 +198,7 @@ export default function App() {
     setCorrectCount(correct);
     setAttempts([...attempts, currentAttempt as Player[]]);
     
-    setTimeout(() => {
+    revealTimers.current.push(setTimeout(() => {
       if (correct === 5) {
         setGameState('won');
         setShowResult(true);
@@ -194,16 +207,23 @@ export default function App() {
         setShowResult(true);
       } else {
         setShowResult(true);
-        setTimeout(() => {
+        revealTimers.current.push(setTimeout(() => {
           setShowResult(false);
           setActiveRow(activeRow + 1);
-          setCurrentAttempt([null, null, null, null, null]);
-        }, 3000);
+          setCurrentAttempt(keepCorrectPlayers(currentAttempt, HIDDEN_TEAM));
+          revealLocked.current = false;
+          setIsRevealing(false);
+          revealTimers.current = [];
+        }, 3000));
       }
-    }, 1500);
+    }, 1500));
   };
 
   const handleReset = () => {
+    clearRevealTimers();
+    revealLocked.current = false;
+    setIsRevealing(false);
+    setSelectingPosition(null);
     setAttempts([]);
     setCurrentAttempt([null, null, null, null, null]);
     setActiveRow(0);
@@ -212,7 +232,7 @@ export default function App() {
     setCorrectCount(0);
   };
 
-  const canSubmit = !currentAttempt.some(p => p === null) && gameState === 'playing';
+  const canSubmit = !isRevealing && !currentAttempt.some(p => p === null) && gameState === 'playing';
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] relative overflow-hidden">
@@ -235,6 +255,11 @@ export default function App() {
           </p>
         </div>
 
+        <div className="mb-4 text-center text-sm text-gray-300" aria-live="polite" aria-atomic="true">
+          <p>Attempt {activeRow + 1} of 5 · {currentAttempt.filter(Boolean).length} of 5 players selected</p>
+          <p className="mt-1 text-xs text-gray-400">Correct picks carry into your next lineup. Change only what you need.</p>
+        </div>
+
         {/* Game Grid */}
         <GameGrid
           attempts={attempts}
@@ -242,11 +267,12 @@ export default function App() {
           activeRow={activeRow}
           hiddenTeam={HIDDEN_TEAM}
           onTileClick={(position) => {
-            if (gameState === 'playing' && !showResult) {
+            if (gameState === 'playing' && !revealLocked.current) {
               setSelectingPosition(position);
             }
           }}
           gameState={gameState}
+          isRevealing={isRevealing}
         />
 
         {/* Submit Button */}
@@ -263,7 +289,7 @@ export default function App() {
               }
             `}
           >
-            Submit
+            {isRevealing ? 'Revealing…' : 'Submit'}
           </button>
         )}
 
@@ -281,6 +307,7 @@ export default function App() {
         )}
 
         {/* Result Banner */}
+        <div role="status" aria-live="polite" aria-atomic="true">
         {showResult && (
           <ResultBanner
             correctCount={correctCount}
@@ -288,6 +315,7 @@ export default function App() {
             gameState={gameState}
           />
         )}
+        </div>
 
         {/* Hidden Team Reveal */}
         {gameState === 'lost' && (

@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Player, GameState } from '../App';
 
 interface GameGridProps {
@@ -8,6 +8,7 @@ interface GameGridProps {
   hiddenTeam: Player[];
   onTileClick: (position: number) => void;
   gameState: GameState;
+  isRevealing?: boolean;
 }
 
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
@@ -19,6 +20,7 @@ export function GameGrid({
   hiddenTeam,
   onTileClick,
   gameState,
+  isRevealing = false,
 }: GameGridProps) {
   const rows = Array.from({ length: 5 }, (_, rowIndex) => {
     if (rowIndex < attempts.length) {
@@ -37,7 +39,7 @@ export function GameGrid({
         {POSITIONS.map((pos) => (
           <div
             key={pos}
-            className="w-14 h-7 sm:w-16 sm:h-8 md:w-20 md:h-10 flex items-center justify-center text-gray-500 text-xs md:text-sm font-bold tracking-wider"
+            className="w-12 min-[360px]:w-14 h-7 sm:w-16 sm:h-8 md:w-20 md:h-10 flex items-center justify-center text-gray-500 text-xs md:text-sm font-bold tracking-wider"
           >
             {pos}
           </div>
@@ -50,7 +52,7 @@ export function GameGrid({
           {row.map((player, colIndex) => {
             const isSubmitted = rowIndex < attempts.length;
             const isCorrect = isSubmitted && player?.name === hiddenTeam[colIndex].name;
-            const isActive = rowIndex === activeRow && gameState === 'playing';
+            const isActive = rowIndex === activeRow && gameState === 'playing' && !isRevealing && !isSubmitted;
 
             return (
               <Tile
@@ -62,6 +64,7 @@ export function GameGrid({
                 onClick={() => isActive && onTileClick(colIndex)}
                 delay={colIndex * 0.1}
                 isWinning={gameState === 'won' && isSubmitted && isCorrect}
+                label={`Attempt ${rowIndex + 1}, ${POSITIONS[colIndex]}: ${player?.name || 'Choose player'}${isSubmitted ? (isCorrect ? ', correct' : ', incorrect') : ''}`}
               />
             );
           })}
@@ -79,14 +82,19 @@ interface TileProps {
   onClick: () => void;
   delay: number;
   isWinning: boolean;
+  label: string;
 }
 
-function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinning }: TileProps) {
+function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinning, label }: TileProps) {
+  const reducedMotion = useReducedMotion();
   return (
-    <motion.div
-      initial={isSubmitted ? { rotateY: 0 } : false}
+    <motion.button
+      type="button"
+      disabled={!isActive}
+      aria-label={label}
+      initial={isSubmitted && !reducedMotion ? { rotateY: 0 } : false}
       animate={
-        isSubmitted
+        isSubmitted && !reducedMotion
           ? {
               rotateY: [0, 90, 0],
               transition: {
@@ -98,8 +106,8 @@ function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinn
           : {}
       }
       className={`
-        w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-lg md:rounded-xl flex items-center justify-center
-        font-bold text-xs sm:text-sm md:text-base tracking-tight cursor-pointer
+        w-12 min-[360px]:w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-lg md:rounded-xl flex items-center justify-center
+        font-bold text-xs sm:text-sm md:text-base tracking-tight enabled:cursor-pointer disabled:cursor-default
         transition-all duration-300 relative overflow-hidden
         ${
           isSubmitted
@@ -113,12 +121,12 @@ function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinn
             : 'bg-gradient-to-br from-[#0f0f0f] to-[#050505] text-gray-800 border-2 border-gray-900 shadow-inner'
         }
       `}
-      whileHover={isActive ? { scale: 1.05, y: -2 } : {}}
-      whileTap={isActive ? { scale: 0.98 } : {}}
+      whileHover={isActive && !reducedMotion ? { scale: 1.05, y: -2 } : {}}
+      whileTap={isActive && !reducedMotion ? { scale: 0.98 } : {}}
       onClick={onClick}
     >
       {/* Championship glow for winning tiles */}
-      {isWinning && (
+      {isWinning && !reducedMotion && (
         <motion.div
           className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 via-yellow-300/30 to-yellow-400/20"
           animate={{
@@ -132,10 +140,11 @@ function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinn
         />
       )}
 
-      <span className="relative z-10 px-1 text-center leading-tight">{player?.name || ''}</span>
+      <span className="relative z-10 min-w-0 break-words px-1 text-center leading-tight">{player?.name || ''}</span>
+      {isSubmitted && <span aria-hidden="true" className="absolute right-1 top-0 text-[10px]">{isCorrect ? '✓' : '×'}</span>}
 
       {/* Subtle shimmer effect on active tiles */}
-      {isActive && player && (
+      {isActive && player && !reducedMotion && (
         <motion.div
           className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent"
           animate={{
@@ -148,6 +157,6 @@ function Tile({ player, isCorrect, isSubmitted, isActive, onClick, delay, isWinn
           }}
         />
       )}
-    </motion.div>
+    </motion.button>
   );
 }
